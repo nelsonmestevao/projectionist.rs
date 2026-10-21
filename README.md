@@ -9,7 +9,7 @@ A Rust port of Tim Pope's [vim-projectionist](https://github.com/tpope/vim-proje
 - **Alternate file navigation**: Switch between source and test files
 - **Related file discovery**: Find all files related to the current file
 - **Template-based file creation**: Create new files with predefined templates
-- **14 transformations**: Transform placeholders (camelCase, snake_case, plural, etc.)
+- **18 transformations**: Transform placeholders (camelCase, snake_case, plural, etc.)
 - **Global projections**: Apply projections to every project matching a heuristic (e.g. every Cargo project)
 - **Any editor**: `--open` uses Zed by default, or `--editor` / `$PROJECTIONIST_EDITOR`
 
@@ -176,7 +176,7 @@ The configuration file maps glob patterns to configurations:
 
 | Property | Type | Description |
 |----------|------|-------------|
-| `alternate` | `string` | Primary alternate file pattern |
+| `alternate` | `string \| string[]` | Alternate file pattern(s), in order of preference |
 | `related` | `string[]` | Array of related file patterns |
 | `type` | `string` | File type identifier |
 | `template` | `string[]` | Template lines for new file creation |
@@ -205,9 +205,12 @@ before shorter ones, with ties broken alphabetically. So for `foo_test.go`, `*_t
 | `{}` | The captured stem |
 | `{dirname}` | Directory portion of the stem (empty for a top-level file) |
 | `{basename}` | File name portion of the stem |
-| `{\|transform}` | Stem with transformation |
-| `{\|t1\|t2}` | Chained transformations |
+| `{transform}` or `{\|transform}` | Stem with transformation |
+| `{t1\|t2}` | Chained transformations, applied left to right |
 | `{dirname\|transform}` | Placeholder with transformation |
+
+As in vim-projectionist, the first name in braces is a placeholder only if one with that name exists, so
+`{camelcase|capitalize|dot}` applies all three transformations to the stem (`foo_bar/baz` → `FooBar.Baz`).
 
 For example, `"src/**/*.py": {"alternate": "tests/{dirname}/test_{basename}.py"}` maps `src/a/b.py` to
 `tests/a/test_b.py` and `src/b.py` to `tests/test_b.py`.
@@ -224,6 +227,7 @@ For example, `"src/**/*.py": {"alternate": "tests/{dirname}/test_{basename}.py"}
 - `uppercase` - Convert to UPPERCASE
 - `lowercase` - Convert to lowercase
 - `camelcase` - Convert to camelCase
+- `capitalize` - Uppercase the first letter of each path component
 - `snakecase` - Convert to snake_case
 - `hyphenate` - Replace `_` with `-`
 
@@ -236,6 +240,10 @@ For example, `"src/**/*.py": {"alternate": "tests/{dirname}/test_{basename}.py"}
 **Inflection:**
 - `plural` - Pluralize (user → users)
 - `singular` - Singularize (users → user)
+
+**Literals:**
+- `open` - A literal `{` (e.g. `import {open} foo {close} from "bar";`)
+- `close` - A literal `}`
 
 ## Example Configurations
 

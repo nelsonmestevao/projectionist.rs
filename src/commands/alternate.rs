@@ -37,7 +37,7 @@ pub fn find_alternate(
     let mut existing_paths = Vec::new();
 
     for m in matches {
-        if let Some(alternate_pattern) = &m.config.alternate {
+        for alternate_pattern in m.config.alternate.iter().flatten() {
             let expanded = expand_placeholders(alternate_pattern, &m.placeholders);
             let full_path = project.resolve(&expanded);
 
@@ -166,6 +166,34 @@ mod tests {
             result.paths,
             [root.join("foo.go"), root.join("foo_test_test.go")]
         );
+    }
+
+    #[test]
+    fn test_find_alternate_from_list() {
+        let temp_dir = TempDir::new().unwrap();
+        let root = temp_dir.path();
+        let config = r#"{
+            "test/e2e/*_test.exs": {
+                "alternate": ["app/pages/{camelcase|capitalize}.tsx", "app/pages/{camelcase|capitalize}/Index.tsx"]
+            }
+        }"#;
+        fs::write(root.join(".projections.json"), config).unwrap();
+        fs::create_dir_all(root.join("app/pages/Orgs")).unwrap();
+        fs::write(root.join("app/pages/Orgs/Index.tsx"), "").unwrap();
+
+        let result = find_alternate(
+            &root.join("test/e2e/orgs_test.exs"),
+            &GlobalConfig::default(),
+        )
+        .unwrap();
+        assert_eq!(
+            result.paths,
+            [
+                root.join("app/pages/Orgs.tsx"),
+                root.join("app/pages/Orgs/Index.tsx")
+            ]
+        );
+        assert_eq!(result.existing, [root.join("app/pages/Orgs/Index.tsx")]);
     }
 
     #[test]

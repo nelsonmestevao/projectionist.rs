@@ -24,9 +24,9 @@ pub struct ProjectionInfo {
     /// The file type (if specified)
     #[serde(skip_serializing_if = "Option::is_none")]
     pub file_type: Option<String>,
-    /// Expanded alternate file path
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub alternate: Option<ExpandedPath>,
+    /// Expanded alternate file paths
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub alternate: Vec<ExpandedPath>,
     /// Expanded related file paths
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub related: Vec<ExpandedPath>,
@@ -85,37 +85,25 @@ pub fn get_projection_info(
 fn build_projection_info(m: MatchResult, project: &Project) -> ProjectionInfo {
     let stem = m.placeholders.get("").cloned().unwrap_or_default();
 
-    let alternate = m.config.alternate.as_ref().map(|pattern| {
-        let expanded = expand_placeholders(pattern, &m.placeholders);
-        let full_path = project.resolve(&expanded);
-        ExpandedPath {
-            pattern: pattern.clone(),
-            expanded,
-            exists: full_path.exists(),
-            full_path: full_path.to_string_lossy().to_string(),
-        }
-    });
+    let expand_paths = |patterns: &Option<Vec<String>>| -> Vec<ExpandedPath> {
+        patterns
+            .iter()
+            .flatten()
+            .map(|pattern| {
+                let expanded = expand_placeholders(pattern, &m.placeholders);
+                let full_path = project.resolve(&expanded);
+                ExpandedPath {
+                    pattern: pattern.clone(),
+                    expanded,
+                    exists: full_path.exists(),
+                    full_path: full_path.to_string_lossy().to_string(),
+                }
+            })
+            .collect()
+    };
 
-    let related: Vec<ExpandedPath> = m
-        .config
-        .related
-        .as_ref()
-        .map(|patterns| {
-            patterns
-                .iter()
-                .map(|pattern| {
-                    let expanded = expand_placeholders(pattern, &m.placeholders);
-                    let full_path = project.resolve(&expanded);
-                    ExpandedPath {
-                        pattern: pattern.clone(),
-                        expanded,
-                        exists: full_path.exists(),
-                        full_path: full_path.to_string_lossy().to_string(),
-                    }
-                })
-                .collect()
-        })
-        .unwrap_or_default();
+    let alternate = expand_paths(&m.config.alternate);
+    let related = expand_paths(&m.config.related);
 
     let define = m
         .config
@@ -182,7 +170,8 @@ mod tests {
         assert_eq!(info.file_type, Some("source".to_string()));
         assert_eq!(info.define, Some("export class utils".to_string()));
 
-        let alt = info.alternate.as_ref().unwrap();
+        assert_eq!(info.alternate.len(), 1);
+        let alt = &info.alternate[0];
         assert_eq!(alt.pattern, "test/{}.test.ts");
         assert_eq!(alt.expanded, "test/utils.test.ts");
         assert!(!alt.exists);

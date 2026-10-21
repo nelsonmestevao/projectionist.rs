@@ -1,4 +1,4 @@
-use serde::{Deserialize, Serialize};
+use serde::{Deserialize, Deserializer, Serialize};
 use std::collections::{BTreeMap, HashMap};
 use std::env;
 use std::fs;
@@ -20,8 +20,9 @@ pub enum ConfigError {
 
 #[derive(Debug, Clone, Deserialize, Serialize, Default)]
 pub struct ProjectionConfig {
-    /// Primary alternate file pattern
-    pub alternate: Option<String>,
+    /// Alternate file patterns, in order of preference (a string or an array in JSON)
+    #[serde(default, deserialize_with = "one_or_many")]
+    pub alternate: Option<Vec<String>>,
     /// Array of related file patterns
     pub related: Option<Vec<String>>,
     /// File type identifier for categorization
@@ -34,6 +35,26 @@ pub struct ProjectionConfig {
     /// Additional properties (vim-projectionist compatibility)
     #[serde(flatten)]
     pub extra: HashMap<String, serde_json::Value>,
+}
+
+/// Deserialize a single string as a one-element list, as vim-projectionist does
+fn one_or_many<'de, D>(deserializer: D) -> Result<Option<Vec<String>>, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    #[derive(Deserialize)]
+    #[serde(untagged, expecting = "a string or an array of strings")]
+    enum OneOrMany {
+        One(String),
+        Many(Vec<String>),
+    }
+
+    Ok(
+        Option::<OneOrMany>::deserialize(deserializer)?.map(|value| match value {
+            OneOrMany::One(one) => vec![one],
+            OneOrMany::Many(many) => many,
+        }),
+    )
 }
 
 /// Map of glob patterns to their configurations
@@ -186,7 +207,7 @@ mod tests {
         }"#;
 
         let config: ProjectionConfig = serde_json::from_str(json).unwrap();
-        assert_eq!(config.alternate, Some("test/{}.test.ts".to_string()));
+        assert_eq!(config.alternate, Some(vec!["test/{}.test.ts".to_string()]));
         assert_eq!(config.related, Some(vec!["docs/{}.md".to_string()]));
         assert_eq!(config.file_type, Some("source".to_string()));
         assert_eq!(
@@ -194,6 +215,26 @@ mod tests {
             Some(vec!["export class {} {".to_string(), "}".to_string()])
         );
         assert_eq!(config.define, Some("class {}".to_string()));
+    }
+
+    #[test]
+    fn test_alternate_accepts_string_or_array() {
+        let single: ProjectionConfig =
+            serde_json::from_str(r#"{"alternate": "test/{}.test.ts"}"#).unwrap();
+        assert_eq!(single.alternate, Some(vec!["test/{}.test.ts".to_string()]));
+
+        let many: ProjectionConfig =
+            serde_json::from_str(r#"{"alternate": ["a/{}.tsx", "b/{}/Index.tsx"]}"#).unwrap();
+        assert_eq!(
+            many.alternate,
+            Some(vec!["a/{}.tsx".to_string(), "b/{}/Index.tsx".to_string()])
+        );
+
+        let none: ProjectionConfig = serde_json::from_str(r#"{"type": "source"}"#).unwrap();
+        assert_eq!(none.alternate, None);
+
+        let err = serde_json::from_str::<ProjectionConfig>(r#"{"alternate": 1}"#).unwrap_err();
+        assert!(err.to_string().contains("a string or an array of strings"));
     }
 
     #[test]

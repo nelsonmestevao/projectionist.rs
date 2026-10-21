@@ -203,7 +203,7 @@ mod tests {
         projections.insert(
             "src/*.ts".to_string(),
             ProjectionConfig {
-                alternate: Some("test/{}.test.ts".to_string()),
+                alternate: Some(vec!["test/{}.test.ts".to_string()]),
                 file_type: Some("source".to_string()),
                 ..Default::default()
             },
@@ -212,7 +212,7 @@ mod tests {
         projections.insert(
             "test/*.test.ts".to_string(),
             ProjectionConfig {
-                alternate: Some("src/{}.ts".to_string()),
+                alternate: Some(vec!["src/{}.ts".to_string()]),
                 file_type: Some("test".to_string()),
                 ..Default::default()
             },
@@ -221,7 +221,7 @@ mod tests {
         projections.insert(
             "app/models/*.rb".to_string(),
             ProjectionConfig {
-                alternate: Some("spec/models/{}_spec.rb".to_string()),
+                alternate: Some(vec!["spec/models/{}_spec.rb".to_string()]),
                 file_type: Some("model".to_string()),
                 ..Default::default()
             },

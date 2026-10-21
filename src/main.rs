@@ -299,7 +299,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                         if let Some(ft) = &p.file_type {
                             println!("  Type: {}", ft);
                         }
-                        if let Some(alt) = &p.alternate {
+                        for alt in &p.alternate {
                             let status = if alt.exists { "✓" } else { "✗" };
                             println!("  Alternate: {} {}", status, alt.expanded);
                         }

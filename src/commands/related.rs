@@ -66,8 +66,8 @@ pub fn find_related(
             }
         }
 
-        // Also include alternate as a related file
-        if let Some(alternate_pattern) = &m.config.alternate {
+        // Also include alternates as related files
+        for alternate_pattern in m.config.alternate.iter().flatten() {
             let expanded = expand_placeholders(alternate_pattern, &m.placeholders);
             let full_path = project.resolve(&expanded);
 
