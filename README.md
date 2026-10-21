@@ -10,6 +10,8 @@ A Rust port of Tim Pope's [vim-projectionist](https://github.com/tpope/vim-proje
 - **Related file discovery**: Find all files related to the current file
 - **Template-based file creation**: Create new files with predefined templates
 - **14 transformations**: Transform placeholders (camelCase, snake_case, plural, etc.)
+- **Global projections**: Apply projections to every project matching a heuristic (e.g. every Cargo project)
+- **Any editor**: `--open` uses Zed by default, or `--editor` / `$PROJECTIONIST_EDITOR`
 
 ## Installation
 
@@ -115,6 +117,39 @@ The CLI searches for configuration files in the following order (first found win
 
 If both files exist, `.projections.json` takes priority for vim-projectionist compatibility.
 
+The project root is the nearest parent directory containing one of these files.
+
+### Global configuration
+
+Projections you want in every project of a kind can go in a global config at
+`$XDG_CONFIG_HOME/projectionist/projections.json` (default `~/.config/projectionist/projections.json`).
+It maps *heuristics* to projections, like vim-projectionist's `g:projectionist_heuristics`:
+
+```json
+{
+  "Cargo.toml": {
+    "src/*.rs": { "alternate": "tests/{}.rs", "type": "source" }
+  },
+  "Gemfile&config/": {
+    "app/models/*.rb": { "alternate": "spec/models/{}_spec.rb", "type": "model" }
+  }
+}
+```
+
+A heuristic lists paths that must exist relative to the project root:
+
+| Syntax | Meaning |
+|--------|---------|
+| `Cargo.toml` | A file named `Cargo.toml` exists |
+| `config/` | A directory named `config` exists (trailing `/`) |
+| `!config/` | No directory named `config` exists |
+| `a&b` | Both `a` and `b` match |
+| `a\|b` | Either `a` or `b` matches |
+
+If a project has its own projections file, global projections whose heuristic matches that root are added
+after the project's own. Without a projections file, the nearest parent directory matching a heuristic
+becomes the project root.
+
 ## Configuration Format
 
 The configuration file maps glob patterns to configurations:
@@ -147,14 +182,35 @@ The configuration file maps glob patterns to configurations:
 | `template` | `string[]` | Template lines for new file creation |
 | `define` | `string` | Search pattern for auto-scroll |
 
+### Patterns
+
+| Pattern | Matches | Stem (`{}`) |
+|---------|---------|-------------|
+| `src/*.ts` | `src/a/b.ts` | `a/b` (everything between prefix and suffix) |
+| `src/**/*.ts` | `src/b.ts`, `src/a/b.ts` | `b`, `a/b` |
+| `tests/**/test_*.py` | `tests/a/test_b.py` | `a/b` (the `test_` prefix is dropped from the file name) |
+| `README.md` | `README.md` only | empty |
+
+Other patterns with more than one `*` never match.
+
+When several projections match a file, the most specific comes first: exact paths, then longer patterns
+before shorter ones, with ties broken alphabetically. So for `foo_test.go`, `*_test.go` is used before
+`*.go`. This decides which alternate is used, which template `create` uses, and the order of
+`related` and `info` output.
+
 ### Placeholders
 
 | Syntax | Description |
 |--------|-------------|
-| `{}` | The captured stem (everything matched by `*`) |
-| `{name}` | Named placeholder |
+| `{}` | The captured stem |
+| `{dirname}` | Directory portion of the stem (empty for a top-level file) |
+| `{basename}` | File name portion of the stem |
 | `{\|transform}` | Stem with transformation |
 | `{\|t1\|t2}` | Chained transformations |
+| `{dirname\|transform}` | Placeholder with transformation |
+
+For example, `"src/**/*.py": {"alternate": "tests/{dirname}/test_{basename}.py"}` maps `src/a/b.py` to
+`tests/a/test_b.py` and `src/b.py` to `tests/test_b.py`.
 
 ### Transformations
 
@@ -255,7 +311,9 @@ projectionist alternate <FILE> [OPTIONS]
 
 Options:
   -l, --line <LINE>        Line number for cursor-aware features
-  -o, --open               Open result in Zed editor
+  -o, --open               Open result in the editor (see --editor)
+      --editor <EDITOR>    Editor command used by --open
+                           [env: PROJECTIONIST_EDITOR] [default: zed]
   -j, --json               Output as JSON
       --create-if-missing  Create the alternate file from template if missing
   -v, --verbose            Show verbose matching information
@@ -280,7 +338,9 @@ projectionist create <FILE> [OPTIONS]
 
 Options:
   -f, --force  Overwrite if file already exists
-  -o, --open   Open the created file in Zed
+  -o, --open             Open the created file in the editor (see --editor)
+      --editor <EDITOR>  Editor command used by --open
+                         [env: PROJECTIONIST_EDITOR] [default: zed]
 ```
 
 ### info

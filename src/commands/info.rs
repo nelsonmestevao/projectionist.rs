@@ -1,6 +1,6 @@
-use crate::config::load_projections_from_root;
-use crate::matcher::{MatchResult, Matcher};
-use crate::project::find_project_root_with_projections;
+use crate::config::GlobalConfig;
+use crate::matcher::MatchResult;
+use crate::project::Project;
 use crate::transform::expand_placeholders;
 use serde::Serialize;
 use std::path::Path;
@@ -8,7 +8,7 @@ use thiserror::Error;
 
 #[derive(Error, Debug)]
 pub enum InfoError {
-    #[error("No project root found (no .projections.json in parent directories)")]
+    #[error("No project root found (no .projections.json or matching global heuristic in parent directories)")]
     NoProjectRoot,
     #[error("Failed to load projections: {0}")]
     ConfigError(#[from] crate::config::ConfigError),
@@ -63,32 +63,31 @@ pub struct InfoResult {
 }
 
 /// Get detailed projection information for a file
-pub fn get_projection_info(file_path: &Path) -> Result<InfoResult, InfoError> {
-    let project_root =
-        find_project_root_with_projections(file_path).ok_or(InfoError::NoProjectRoot)?;
+pub fn get_projection_info(
+    file_path: &Path,
+    global: &GlobalConfig,
+) -> Result<InfoResult, InfoError> {
+    let project = Project::discover(file_path, global)?.ok_or(InfoError::NoProjectRoot)?;
 
-    let projections = load_projections_from_root(&project_root)?;
-    let matcher = Matcher::new(projections);
-    let matches = matcher.match_absolute_path(file_path, &project_root);
-
-    let projection_infos: Vec<ProjectionInfo> = matches
+    let projection_infos: Vec<ProjectionInfo> = project
+        .match_file(file_path)
         .into_iter()
-        .map(|m| build_projection_info(m, &project_root))
+        .map(|m| build_projection_info(m, &project))
         .collect();
 
     Ok(InfoResult {
         file: file_path.to_string_lossy().to_string(),
-        project_root: project_root.to_string_lossy().to_string(),
+        project_root: project.root.to_string_lossy().to_string(),
         projections: projection_infos,
     })
 }
 
-fn build_projection_info(m: MatchResult, project_root: &Path) -> ProjectionInfo {
+fn build_projection_info(m: MatchResult, project: &Project) -> ProjectionInfo {
     let stem = m.placeholders.get("").cloned().unwrap_or_default();
 
     let alternate = m.config.alternate.as_ref().map(|pattern| {
         let expanded = expand_placeholders(pattern, &m.placeholders);
-        let full_path = project_root.join(&expanded);
+        let full_path = project.resolve(&expanded);
         ExpandedPath {
             pattern: pattern.clone(),
             expanded,
@@ -106,7 +105,7 @@ fn build_projection_info(m: MatchResult, project_root: &Path) -> ProjectionInfo 
                 .iter()
                 .map(|pattern| {
                     let expanded = expand_placeholders(pattern, &m.placeholders);
-                    let full_path = project_root.join(&expanded);
+                    let full_path = project.resolve(&expanded);
                     ExpandedPath {
                         pattern: pattern.clone(),
                         expanded,
@@ -173,7 +172,7 @@ mod tests {
         let temp_dir = setup_test_project();
         let source_file = temp_dir.path().join("src/utils.ts");
 
-        let result = get_projection_info(&source_file).unwrap();
+        let result = get_projection_info(&source_file, &GlobalConfig::default()).unwrap();
 
         assert_eq!(result.projections.len(), 1);
 
